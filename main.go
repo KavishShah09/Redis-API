@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,13 +12,11 @@ import (
 
 var client *redis.Client
 
-//Name is something
-type Name struct {
-	ID        string `json:"id"`
-	Firstname string `json:"firstname"`
+//Object is something
+type Object struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
-
-// var names []Name
 
 func main() {
 	client = redis.NewClient(&redis.Options{
@@ -27,66 +24,60 @@ func main() {
 	})
 	r := mux.NewRouter()
 
-	// names = append(names, Name{ID: "0", Firstname: "John"})
-	// names = append(names, Name{ID: "1", Firstname: "Kavish"})
-
-	r.HandleFunc("/names", createName).Methods("POST")
-	r.HandleFunc("/names", getNames).Methods("GET")
-	r.HandleFunc("/names/{id}", getName).Methods("GET")
+	r.HandleFunc("/data", createValue).Methods("POST")
+	r.HandleFunc("/data", getData).Methods("GET")
+	r.HandleFunc("/data/{key}", getValue).Methods("GET")
 	http.Handle("/", r)
 	http.ListenAndServe(":8000", nil)
 }
 
-func getNames(w http.ResponseWriter, r *http.Request) {
+func getData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	val, err := client.LRange("names", 0, -1).Result()
-	log.Println(val, len(val))
-	check(err)
-	json.NewEncoder(w).Encode(client.LRange("names", 0, -1))
+	if r.URL.Query() == nil {
+		var limit int64 = 10
+		match := ""
+		keys, _, err := client.Scan(0, match, limit).Result()
+		if err != nil {
+			log.Println("error getting keys", err)
+		}
+		log.Println(keys)
+
+	} else {
+		limitString := r.URL.Query().Get("limit")
+		limit, err := strconv.ParseInt(limitString, 10, 64)
+		if limit != 0 {
+			if err != nil {
+				log.Println("error converting string to int64", err)
+			}
+		}
+		match := r.URL.Query().Get("match")
+		keys, _, err := client.Scan(0, match, limit).Result()
+		if err != nil {
+			log.Println("error getting keys", err)
+		}
+		log.Println(keys)
+	}
+
 }
 
-func getName(w http.ResponseWriter, r *http.Request) {
+func getValue(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	id, _ := strconv.ParseInt(params["id"], 10, 64)
-	value := client.LIndex("names", id)
-	log.Println(value.Result())
-	check(value.Err())
-	// for _, item := range names {
-	// 	if item.ID == params["id"] {
-	// 		json.NewEncoder(w).Encode(item)
-	// 		return
-	// 	}
-	// }
-	// json.NewEncoder(w).Encode(&Name{})
+	val, err := client.Get(params["key"]).Result()
+	if err != nil {
+		log.Println("error getting value redis", err)
+	}
+	log.Println(val)
+	json.NewEncoder(w).Encode(&val)
 }
 
-func createName(w http.ResponseWriter, r *http.Request) {
+func createValue(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var name Name
-	_ = json.NewDecoder(r.Body).Decode(&name)
-	err := client.RPush("names", name.Firstname).Err()
+	var object Object
+	_ = json.NewDecoder(r.Body).Decode(&object)
+	err := client.Set(object.Key, object.Value, 0).Err()
 	if err != nil {
 		log.Println("error inserting redis", err)
 	}
 	w.WriteHeader(http.StatusOK)
-	// json.NewEncoder(w).Encode(names)
-}
-
-// func indexSetHandler(w http.ResponseWriter, r *http.Request) {
-// 	err := client.Set("key", "value", 0).Err()
-// 	check(err)
-// }
-
-// func indexGetHandler(w http.ResponseWriter, r *http.Request) {
-// 	val, err := client.Get("key").Result()
-// 	check(err)
-// 	fmt.Println("key", val)
-// }
-
-func check(err error) {
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 }

@@ -12,7 +12,7 @@ import (
 
 var client *redis.Client
 
-//Object is something
+//Object is anything with a key string and a value string
 type Object struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
